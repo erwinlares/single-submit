@@ -1,0 +1,30 @@
+# HTC Submit File
+
+# Container stanza provides HTCondor with the name of the container
+container_image = docker://registry.doit.wisc.edu/erwin.lares/analysis
+universe = container
+
+# The executable line tell HTCondor what job to run
+executable = analysis.sh
+
+# The “transfer” stanza tells HTCondor 
+# what to do with output and input files
+transfer_input_files = analysis.R, data.csv
+transfer_output_files = analysis-results.tar.gz
+
+# the jobs stanza tracks information printed
+# by the job or about the job
+log = job.log
+error = job.err
+output = job.out
+
+# The request stanza tells HTCondor what
+# resources what resources to allocate 
+request_cpus = 1
+request_memory = 4GB
+request_disk = 2GB
+
+# The queue stanza tells HTCondor the number
+# of separate jobs requested
+queue 1
+
