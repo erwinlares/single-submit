@@ -1,0 +1,61 @@
+---
+title: "Workflow for ResearchDrive Access on HTC and HPC"
+author: "EL & SB"
+format: html
+---
+
+## The Long Game
+
+The goal being this project is to document the submission process of an R project to CHTC. The main motivation is to lower *the barrier to entry* to CHTC by automating several of the steps involved in a job submission to CHTC. It is well known (citations?) that the command line constitutes a painpoint for many researchers that keeps them from leveraging the compute resources offered by CHTC.
+
+This workflow details the steps involved in the process of transferring data from ResearchDrive to the CHTC systems, and from the CHTC systems back into Research Drive. It assumes:
+
+- You have access to a ResearchDrive Share (as either a PI, or member of a PI's group).
+- You have an existing account with CHTC.
+
+## Transfering Files
+
+### Log in:
+
+If you are are transferring to a `/staging` directory, log in to `transfer.chtc.wisc.edu`.
+
+If you are transferring files and or from your `/home` directory, log into your usual submit server.
+
+- HTC Servers will be `ap2001.chtc.wisc.edu` or `ap2002.chtc.wisc.edu`.
+- HPC Servers will be _______________
+
+### Choose a folder in your CHTC Directory to transfer into:
+
+Navigate to the folder in CHTC (`/staging` or `/home`), into which you would like to transfer files.
+
+### Connect ResearchDrive:
+
+Run the following command to connect to ResearchDrive, filling in the username of your PI:
+
+`$ smbclient -k //research.drive.wisc.edu/PI-Name`
+
+Your prompt should change to look like this:
+
+`smb: \> `
+
+### Choose a folder in your Research Drive Directory to transfer from:
+
+If you type `ls` now, you’ll see the files in ResearchDrive, not CHTC. Navigate through ResearchDrive (using `cd`) until you are at the folder where you would like to get or put files.
+
+### Move files:
+
+To move individual files, you will use the `get` and `put` commands.
+
+- To move a file from CHTC to ResearchDrive, run: `smb: \> put filename`
+
+- To move a file from ResearchDrive to CHTC, run: `smb: \> get filename`
+
+To move multiple files, you will use `mget` and `mput` commands.
+
+- To move files from CHTC to ResearchDrive, run: `smb: \> mput *.csv`
+
+- To move files from ResearchDrive to CHTC, run: `smb: \> mget *.csv`
+
+### Finish:
+
+Once you are done moving files, you can type `exit` to disconnect from ResearchDrive.

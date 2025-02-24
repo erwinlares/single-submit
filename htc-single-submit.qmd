@@ -1,0 +1,431 @@
+---
+title: "A workflow to containerize your analysis "
+author: "Erwin Lares"
+affiliation: "Research Cyberinfrastructure at DoIT"
+format:
+  html:
+    code-fold: true
+    code-summary: "Show the code"
+knitr:
+  opts_chunk: 
+    message: false
+    warning: false
+---
+
+## The long game
+
+The goal being this project is to document the submission process of an R project to CHTC. The main motivation is to lower *the barrier to entry* to CHTC by automating several of the steps involved in a job submission to CHTC. The command line constitutes a painpoint for many researchers that keeps them from leveraging the compute resources offered by CHTC. 
+
+This workflow details the steps involved in the job submission process. It assumes:
+
+- the analysis is contained in a Quarto markdown or R markdown document.
+- packages dependencies are managed with the `renv` package and a .lock file exists in the project folder.
+- this pipeline requires the user to log in to CHTC account once before running the code chunks present in this document.
+- `podman` is installed in the local machine.
+- the user has a UW-Madison NetID.
+- the user has a`GitLab` account. Furthermore, there is a repo associated with this analysis and the `Container Registry` feature has been enabled for that repo.
+- for the purposes of this pipeline, the file names are `analysis.qmd`, and `data.csv`. The derived files, `analysis.R`, `analysis.sub`, `analysis.sh`, are all created from the original `.qmd` file provided .
+- the user will have to log in to submit server and run the `condor_submit` command on the `analysis.sub` file. The purpose of this pipeline is to do the heavy lifting of containerizing the analysis, build the files required by CHTC, and move them to the user's `/home` directory.
+
+```{mermaid}
+
+%%| label: fig-shippingto-chtc
+%%| fig-cap: "Shipping an analysis to CHTC"
+
+flowchart TB
+  A[start with a notebook<br> .rmd or .qmd] --> B(strips the code<br>builds a .R script)
+  B --> C[Determines R version]
+  B --> D[Locates .lock file]
+  C --> E[Creates Dockerfile]
+  D --> E
+  E --> F[Build container image]
+  F --> G[Logs in to registry.doit.wisc.edu]
+  G --> H[Pushes image to registry/gitlabuser/repo]
+  H --> I[Creates submit file]
+  I --> J[Creates executable file]
+  J --> K[Copies files + data <br>over CHTC's /home ]
+```
+
+
+
+
+```{r}
+library(readr)
+library(knitr)
+
+```
+
+
+## Building a plain .R file
+
+`knitr::purl()` takes as an argument `analysis.qmd` to outputs `analysis.R`. The main reason I chose to do this is because keeping all your code in one place leads to fewer errors and it is easier to maintain. Additionally, stripping the analysis to just the `.R` code keeps the computational overhead to a minimum. 
+
+The argument `documentation` controls how much of the prose is ported as comments into the `.R` file. I chose the value of `1` for just the code. 
+
+```{r}
+#| eval: false
+
+# rstudioapi::documentPath() |>
+#      basename() |> #makes it a relative path to the                       project directory
+    knitr::purl("analysis.qmd", documentation = 1)
+```
+
+The following section includes a bit of information about containers. What is critical is that containers are a fantastic technology to make sure your analysis is reproducible as it encapsulates your code and everything needed to run it. In this draft I may be referring to container, docker container, or podman container interchangeably. 
+
+
+::: {.callout-important collapse="true}
+## What's a container?
+
+A Docker container is a lightweight, portable, and self-sufficient environment that allows you to run applications in a consistent and isolated manner. Here's a breakdown of what makes Docker containers unique and useful:
+
+- **Isolation**: Containers package an application along with its dependencies, libraries, and configuration files, isolating it from the host system and other containers. This ensures that the application runs the same way regardless of where it's deployed.
+
+- **Portability**: Containers can run on any system that supports Docker, whether it's a developer's laptop, an on-premises server, or a cloud environment. This makes moving applications between different environments seamless.
+
+- **Efficiency**: Unlike virtual machines, containers share the host system's kernel and run as isolated processes. This reduces overhead, making containers much more lightweight and faster to start.
+
+- **Consistency**: By using containers, developers can ensure that their applications work in any environment by eliminating the "it works on my machine" problem. The application, dependencies, and environment are all bundled together, guaranteeing consistent behavior.
+
+- **Scalability**: Containers can be easily scaled up or down to handle varying loads. Tools like Docker Swarm and Kubernetes provide orchestration features to manage and scale containerized applications.
+
+- **Ecosystem**: Docker has a robust ecosystem, including Docker Hub, where pre-built container images can be shared and downloaded. This encourages reuse and speeds up development.
+
+In essence, a container encapsulates an application and everything it needs to run, providing a consistent, portable, and efficient way to deploy and manage software. This has made containers an essential tool in modern DevOps practices and cloud-native application development.
+:::
+
+::: {.callout-tip collapse="true}
+## What are the disadvantages of containers
+
+While containers offer many benefits, they also come with some disadvantages. Here are a few to consider:
+
+1. **Complexity**: Managing containers can be complex, especially as the number of containers and services increases. Orchestration tools like Kubernetes can help but also add another layer of complexity.
+
+2. **Security**: Containers share the host operating system's kernel, which can pose security risks. A vulnerability in the kernel can potentially affect all containers running on the host. Additionally, misconfigurations or insecure images can lead to security breaches.
+
+3. **Storage Management**: Containers can quickly consume storage resources, especially when dealing with large images or a high volume of container logs and data. Proper storage management and cleanup are essential.
+
+4. **Networking**: While Docker provides networking solutions, managing container networks, especially in complex environments, can be challenging. This is particularly true for cross-host networking and integrating with existing network infrastructure.
+
+5. **Performance Overhead**: Although lighter than virtual machines, containers still introduce some performance overhead, especially in I/O-intensive applications. The shared kernel approach can lead to resource contention and affect performance.
+
+6. **Compatibility Issues**: Not all applications are well-suited for containerization. Legacy applications or those with complex dependencies might require significant modifications to run in containers.
+
+7. **Learning Curve**: Adopting Docker and containerization involves a learning curve for developers and operations teams. Understanding container concepts, best practices, and orchestration tools requires time and effort.
+
+Despite these challenges, many organizations find that the advantages of using Docker containers—such as portability, scalability, and consistency—outweigh the disadvantages. Proper planning, security practices, and resource management can mitigate many of these issues.
+::: 
+
+::: {.callout-note collapse="true}
+## Why/when should you put your analysis in a container 
+
+Packaging your analysis in a container can provide several benefits, especially in the context of research. Here are some scenarios when you might consider it, and the reasons why it's advantageous:
+
+1. **Collaborative Projects**: When you're working with a team or collaborating with other researchers who need to run your analysis on their systems.
+2. **Reproducibility**: When ensuring that your analysis can be replicated exactly in the future, by others or by yourself.
+3. **Deployment**: When you need to deploy your analysis on different platforms, such as cloud services, high-performance computing clusters, or even other researcher's personal machines.
+4. **Complex Dependencies**: When your analysis involves multiple software dependencies, libraries, or specific versions that need to be maintained consistently.
+5. **Publications and Presentations**: When sharing your research findings through publications or presentations, ensuring others can replicate your work precisely.
+6. **Continuous Integration/Continuous Deployment (CI/CD)**: When integrating your analysis into a larger workflow that requires frequent updates or automated testing.
+5. **Resource Efficiency**: Containers are lightweight and efficient, making them ideal for running resource-intensive analyses on various infrastructures.
+6. **Version Control**: With container images, you can version-control your analysis environment, ensuring that you can always revert to a previous state if needed.
+
+Overall, containers can greatly enhance the efficiency, reliability, and reproducibility of your research workflow, making them a powerful tool for modern researchers.
+:::
+
+## Building a container from your analysis 
+
+If you have follow along so far, we had 
+
+- an analysis that we documented and coded inside a single Quarto document  
+
+- a way to capture the package dependencies required to run your analysis via the `renv` package.
+
+To build a container we are going to create a file called Dockerfile which have the instructions needed to build a container image.
+
+```{r}
+#|eval: false
+
+r_version <- R.Version()
+chtc_user <- "lares"
+gitlab_user <- "erwin.lares"
+
+# fileConn<-file("output.txt")
+# writeLines(c("Hello","World"), fileConn)
+# close(fileConn)
+
+# dockerfile_line_by_line <-  glue::glue(
+#     "
+#     #Get the current version of R as the base image
+#     FROM rocker/r-ver:{glue::glue('{r_version$major}.{r_version$minor}')}
+#     # Set the working directory
+#     WORKDIR /home
+#     ")
+
+# file_conn <- file("Dockerfile")
+# writeLines(dockerfile_line_by_line, file("Dockerfile"))
+# close(file("Dockerfile"))
+
+
+FROM_line <- glue::glue(
+    "FROM rocker/r-ver:{glue::glue('{r_version$major}.{r_version$minor}')}")
+
+WORKDIR_line <- "WORKDIR /home"
+
+COPY_renv_lock <- glue::glue(
+    "COPY renv.lock /home/renv.lock") 
+
+COPY_renv_library <- glue::glue(
+    "COPY renv/library /home/app/renv/library"
+)
+
+# if I want the analysis and the data inside the container, uncomment the two lines below and the two lines 155 and 156
+#COPY_analysis <- "COPY analysis.R /home/toy-analysis.R"
+#COPY_data <- "COPY data.csv /home/data.csv"
+
+
+
+readr::write_lines(FROM_line, file = "Dockerfile")
+readr::write_lines(WORKDIR_line, file = "Dockerfile", 
+                   append = TRUE)
+readr::write_lines(COPY_renv_lock, file = "Dockerfile", 
+                   append = TRUE)
+readr::write_lines(COPY_renv_library, file = "Dockerfile",
+                   append = TRUE)
+
+
+#write_lines(COPY_analysis, file = "Dockerfile", append = TRUE)
+#write_lines(COPY_data, file = "Dockerfile", append = TRUE)
+
+
+#install_restore contains the secret sauce to install all dependencies
+#I chose this to go around nested quotation marks issues
+
+readr::write_lines(read_lines("install_and_restore_packages.sh"), 
+                   file = "Dockerfile",
+                   append = TRUE)
+
+```
+
+## Build the image 
+
+Once we have a Dockerfile, an image is created by running a `podman image build` command. I chose `podman` rather than `docker` due to recent changes to the Docker License Agreement that can potentially affect UW-Madison users. For reference, using a 2019 MacBook Pro, building the image takes approximately 5 minutes.
+
+
+```{bash}
+
+
+#podman build -t registry.doit.wisc.edu/erwin.lares/analysis .
+
+```
+
+# You have a container image, now what? 
+
+Recall that the long game was to be able to ship our analysis to the HTC cluster? at CHTC. We have the container image built, we now have to publish it to a location so that CHTC and see it and use. 
+
+`Docker Hub` has been the *de facto* place to publish container images, but again, due to the issues regarding their user agreement, we are going to pursue two different alternatives. 
+
+The first one is [`Quay.io`](https://quay.io). `Quay.io` is Red Hat's container registry, Quay.io is free for setting up public repositories, but there is a fee for private repositories. You will need a `Quay.io` account in order to publish images. 
+
+The second alternative, is to publish your container image to [UW-Madison gitlab instance](https://git.doit.wisc.edu) container registry. There are a few preliminary steps you need to complete in order to be able to publish your container image there. 
+
+- You must create an gitlab account. If you have a NetID, you are eligible  for one. [Request a gitlab account here](https://kb.wisc.edu/shared-tools/109039)
+- You container need to be associated with a gitlab repo. Your repo must be public. At this time CHTC is not enabled to pull images from private repos.
+- You must enable the Package Registry. Do so on the Sidebar >> Deploy >> Package Registry.
+
+You must login to UW-Madison GitLab Container Registry with your NetID credentials. The code chunk below will prompt you to do so. You will need to do that once. Your credentials will cache for subsequent logins. 
+
+As your image was already created, the next step is to push the image to the GitLab Registry. The code chunk below does just that. Pushing the container image to the GitLab registry took about 4 minutes.
+
+
+```{bash}
+
+#podman push registry.doit.wisc.edu/erwin.lares/analysis
+
+```
+
+## The last strech: running your analysis on CHTC 
+
+At this point you have almost everything you need to run your analysis on CHTC's HTC. To recap, you have ...
+
+- an `renv`-enabled R project which contains an analysis in a human readable `analysis.qmd` and its required data contained in `data.csv`
+- a derived `analysis.R` file that contains the code behind the analysis and performs all the calculations required by the analysis  
+- a derived `Dockerfile` programmatically built from `analysis.qmd`  
+- a container image built from the Dockerfile with correct version of R and all needed libraries to run the analysis 
+- a public GitLab repo with the Container Registry option enabled.
+
+The previous section ended with the publication of the container image to UW-Madison GitLab instance. 
+
+To actually run your analysis, there are a few loose ends to take care off 
+
+- You need a [CHTC account](https://chtc.cs.wisc.edu/uw-research-computing/account-details). You will need your NetID credentials gain access.  
+- You will need to copy `analysis.R` and `data.csv` over to CHTC.
+- You will also need to copy over two additional files, a submit file and a executable file. There is a code chunk below that will create those files.  
+
+
+### Generating the submit file 
+
+CHTC requires you to create a submit file. A submit file tells HTCondor information like resource requirements, software and data requirements, and what commands to run. A submit file contains:
+
+- What to run 
+
+- What files and software you need
+
+- How many standard resources you need (CPUs, memory, disk)
+
+- Where to store data about the job
+
+- Special requirements: GPUs, access to Gluster, a certain operating system
+
+- How many jobs you want to run  
+
+The content for the `analysis.sub` is shown below 
+
+```{r}
+
+
+title_line <- c("# HTC Submit File",
+                "")
+
+container_stanza <- c("# Container stanza provides HTCondor with the name of the container",
+                      "container_image = docker://registry.doit.wisc.edu/erwin.lares/analysis",
+                      "universe = container",
+                      "")
+
+executable_stanza <- c("# The executable line tell HTCondor what job to run",
+                      "executable = analysis.sh",
+                      "")
+
+transfer_stanza <- c("# The “transfer” stanza tells HTCondor ",
+                     "# what to do with output and input files",
+                     "transfer_input_files = analysis.R, data.csv",
+                     "transfer_output_files = analysis-results.tar.gz",
+                     "")
+
+jobs_stanza <- c("# the jobs stanza tracks information printed",
+                 "# by the job or about the job",
+                 "log = job.log",
+                 "error = job.err",
+                 "output = job.out",
+                 "")
+
+request_stanza <- c("# The request stanza tells HTCondor what",
+                    "# resources what resources to allocate ",
+                    "request_cpus = 1",
+                    "request_memory = 4GB",
+                    "request_disk = 2GB",
+                    "")
+
+queue_stanza <- c("# The queue stanza tells HTCondor the number",
+                  "# of separate jobs requested",
+                  "queue 1",
+                  "")
+
+readr::write_lines(title_line, file = "analysis.sub")
+readr::write_lines(container_stanza, file = "analysis.sub", 
+                   append = TRUE)
+readr::write_lines(executable_stanza, file = "analysis.sub", 
+                   append = TRUE)
+readr::write_lines(transfer_stanza, file = "analysis.sub", 
+                   append = TRUE)
+readr::write_lines(jobs_stanza, file = "analysis.sub", 
+                   append = TRUE)
+readr::write_lines(request_stanza, file = "analysis.sub", 
+                   append = TRUE)
+readr::write_lines(queue_stanza, file = "analysis.sub", 
+                   append = TRUE)
+
+
+
+```
+
+
+### Generating an executable file 
+
+The executable file `analysis.sh` is a shell script that tells CTCondor **what** to do. In our case, we wish to `R` to run the `analysis.R` script. To do so from the command line, we run `Rscript` rather that `R` itself. The `Rscript` takes an existing script, runs `R` in the background, executes the script and closes afterwards. There is no graphical interface opened and no other human interaction needed.
+
+The contents of the `analysis.sh` files is shown below
+
+```{r}
+
+
+title_line <- c("#!/bin/bash", "")
+output_folder_line <- "mkdir results-folder"
+run_line <- "Rscript analysis.R"
+compress_line <- "tar -czf analysis-results.tar.gz results-folder"
+
+readr::write_lines(title_line, file = "analysis.sh")
+readr::write_lines(output_folder_line, file = "analysis.sh", 
+                   append = TRUE)
+readr::write_lines(run_line, file = "analysis.sh", 
+                   append = TRUE)
+readr::write_lines(compress_line, file = "analysis.sh", 
+                   append = TRUE)
+
+```
+
+
+
+### Copying your analysis and data to CHTC 
+
+The Linux command `scp` — secure copy — can take care of copying files from one machine to another. A popup window will ask you to authenticate with your NetID, password, and your MFA device. Follow the prompts. The code chunk copies all the derived files and the data over to CHTC
+
+
+```{bash}
+
+#scp analysis.R data.csv analysis.sub analysis.sh lares@ap2001.chtc.wisc.edu:/home/lares
+
+```
+
+
+## The last step 
+
+The final step in this journey is to log in to one of CHTC's submit servers. You can read about it [here](https://chtc.cs.wisc.edu/uw-research-computing/connecting)
+
+In short, there are two submit servers, `ap2001.chtc.wisc.edu`, and `ap2002.chtc.wisc.edu`. To access them you'll need to run an `ssh` command from a terminal window with your login information, like so 
+
+```{}
+
+ssh <your-netid>@ap2001.chtc.wisc.edu
+
+```
+
+Once you have authenticated, you'll need to run a `condor_submit` command. `condor_submit` takes one argument, the name of the submit file created earlier. Your submit file `analysis.sub`, along with `analysis.R`, `data.csv`, and `analysis.sh` have been copied over to your home directory on the submit server.
+
+```{}
+
+#this is run on the submit server 
+
+condor_submit analysis.sub
+
+```
+
+To track the job progress, run a `condor_watch_q` command. You can read more about it [here](https://chtc.cs.wisc.edu/uw-research-computing/condor_q)
+
+```{}
+
+#this is run on the submit server 
+
+condor_watch_q
+
+```
+
+
+### Retrieving results 
+
+```{bash}
+
+
+#scp lares@ap2001.chtc.wisc.edu:/home/lares/analysis-results.tar.gz /Users/lares/Desktop
+
+
+```
+
+
+
+
+Good luck submitting your job to CHTC. If you have questions about this document, get in touch with us via email `rstudio-support@office365.wisc.edu`. Don't forget CHTC's facilitation team is ready to help you too! They can be reached at `chtc@cs.wisc.edu`.
+
+If you have question regarding this workflow, get in contact with me ... 
+
+
+

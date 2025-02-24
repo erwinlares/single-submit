@@ -1,0 +1,151 @@
+---
+title: "Analysis"
+author: "Erwin Lares"
+affiliation: "Research Cyberinfrastructure at DoIT"
+format:
+  html:
+    code-fold: true
+    code-summary: "Show the code"
+knitr:
+  opts_chunk: 
+    message: false
+    warning: false
+---
+
+## The long game
+
+The goal being this project is to document the submission process of an R project to CHTC. The main motivation is to lower *the barrier to entry* to CHTC. It is well known (citations?) that the command line constitutes a painpoint for many researchers that keeps them from leveraging the compute resources offered by CHTC. 
+
+
+
+The general steps 
+
+  - Motivate  
+  - Carry out analysis  
+  - Containerized the analysis 
+  - Publish the container to a registry
+  - Generate .sub and .sh files
+  - Log in to CHTC and submit a job
+
+## Why a Quarto document and not an Rscript file? 
+
+Quarto or rmarkdown enable you to weave together content and executable code into a finished document. If your intent is to make your process easy to document and easy to reproduce, you should consider doing it this way. 
+
+By virtue of writing your workflow first as a document and not as code, you are shifting your attention to making your workflow human readable first. This alone will make it easy for other people to collaborate with you. 
+
+The end result of this project **is** to create an rscript that can be shipped to CHTC. So at the end of this document, there is a code chunk that will strip all the text, keep only the code, and place all the code into an .R file.  
+
+## Special considerations
+
+This workflow will assume the following:
+
+- Your workflow is contained inside an R project.
+- Your project is using the `renv` package, so an updated `lockfile` exists within your project
+- If you need to install additional packages, you will do so with `renv::install()` rather than `install.packages()`
+
+
+## Toy analysis 
+
+As mentioned above, the advantage of starting your analysis off from a Quarto (or rmarkdown) document is that you can write your prose along side your code. You can include visuals and diagrams and pretty much anything needed. 
+
+For instance you can inform the workflow that your analysis follows using a `Mermaid` or a `Graphviz` diagram to help you reader navigate what you are about to do. Check @fig-mermaid to get a bird's-eye view of what the analysis will accomplish. 
+
+```{mermaid}
+%%| label: fig-mermaid
+%%| fig-cap: "Analysis workflow "
+flowchart LR
+  A[load the libraries <br>and data] --> B[Prepare <br>the data]
+  B --> C[Perform Calculations]
+  C --> D[Print tabular results]
+  C --> E[Render visualizations]
+  D -->F[Save tabular results as .csv<br>Save plot as .png]
+  E -->F
+```
+
+
+Immediately below starts the would-be analysis 
+
+## Load Packages and Data 
+
+For this toy analysis, we will load the package `tidyverse` for data manipulation and visualization. The data comes from the `palmerpenguins` dataset. 
+
+
+```{r}
+library(tidyverse)
+library(palmerpenguins)
+library(gt)
+
+data <- palmerpenguins::penguins
+```
+
+## Tabular results
+
+Sometimes you need numerical results as the output of your analysis. R is great for that. 
+
+The data we are using to motivate this analysis is the [Palmer Penguins](https://allisonhorst.github.io/palmerpenguins/) data set. 
+
+We are interested in calculating the traditional measures of tendency (min, max, mean, and standard deviation) for all three species of penguins present in the data set. 
+
+The code chunk below accomplishes that by grouping the data into subsets by species. Then the four measures of tendency are calculates by the using Base R functions `min`, `max`, `mean`, and `sd`.
+
+
+```{r}
+moft_bm <- data |>
+    group_by(species) |>
+    summarize(min_fl = min(flipper_length_mm, na.rm = TRUE),
+              max_fl = max(flipper_length_mm, na.rm = TRUE),
+              mean_fl = mean(flipper_length_mm, na.rm = TRUE),
+              sd_fl = sd(flipper_length_mm, na.rm = TRUE))
+
+moft_bm |> 
+  gt() |> 
+  fmt_number(decimals = 0) |> 
+  tab_header(
+    title = "Measures of Tendency",
+    subtitle = "Flipper Length in mm"
+  )
+```
+
+# Visualization results
+
+As the old adage goes, "plot is worth a thousand tables". The code chunk below creates a set of boxplots of the flippers in millimeters for each species of penguins.
+
+```{r}
+data |> 
+    ggplot() +
+    aes(x = flipper_length_mm, color = species) +
+    geom_boxplot() + 
+    labs(title = "Flipper length in mm") +
+    theme_bw()
+```
+
+At a glance, we can see that Gentoo penguins have the longer flippers of the three species. Adelie penguins have the shortest, but some of the biggest Adelie penguins have flippers are long as some of the small Chintraps. 
+
+## Saving results
+
+Although notebooks are a great way to share analysis, sometimes we might just want the code or the results of the code, which in our case is the table with the aggregate measurements of central tendency and the plot. 
+
+The code chunk below accomplishes the latter two using the `write_csv()` function and the `gg_save()` function.
+
+
+```{r}
+
+moft_bm |> write_csv("results-folder/moft-bm.csv")
+
+ggsave("results-folder/fl-mm-plot.png")
+```
+
+
+
+## Saving the code
+
+To recap, we have a document that is mostly written in language intended to be read by humans; it has formatted text to make it easier to read, contains images and diagrams to better understand the points we are trying to get across, *and* it contains the code that performs the calculations associated with the research. As data scales up, it may make sense to avoid the document-rendering overhead computation costs, besides are not interested in any of the prose, just the code.
+
+We can leverage `knitr`, the engine that powers R in Quarto, to extract just the R code from the Quarto document using the `purl()` function. The code chunk below accomplishes the task described above and creates an .R file from the .qmd in the same directory and sharing the same name. 
+
+
+
+
+
+
+

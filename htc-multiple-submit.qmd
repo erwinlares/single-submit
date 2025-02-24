@@ -1,0 +1,416 @@
+---
+title: "A workflow to containerize your analysis "
+author: "Erwin Lares"
+affiliation: "Research Cyberinfrastructure at DoIT"
+format:
+  html:
+    code-fold: true
+    code-summary: "Show the code"
+knitr:
+  opts_chunk: 
+    message: false
+    warning: false
+---
+
+## Submitting multiple jobs
+
+This document contains a modified version of the `htc single submit` workflow. In the original workflow, an analysis was applied to a single dataset. This initial approach, although sucessful doesn't not leverage the power of the Condor job scheduler, which is to say, the ability to schedule multiple jobs. 
+
+In this iteration of the workflow, an analysis will be applied to multiple datasets. The diagram below, shows that the process is esentially similar. The key differences is the step that subdivides the larget dataset into the appropriate subsets that are conducive to an analysis. The logic behind multiple submission is contain in the submit file itself.  
+
+
+```{r}
+library(readr)
+library(knitr)
+library(glue)
+
+```
+
+
+```{r}
+include_graphics("htc-diagram.jpg")
+
+```
+
+## Preprocessing the data
+
+### HTC vs HPC
+
+The **Condor CHTC job scheduler**, also known as **HTCondor**, is designed for managing and scheduling a large number of computational jobs. It is particularly useful for **high-throughput computing (HTC)**, where the focus is on running many independent tasks over a long period. HTCondor is ideal for managing many independent tasks over time, making it suitable for high-throughput computing. In contrast, HPC clusters are designed for parallel processing of complex problems, providing high-speed computation and scalability.
+
+For the current use case, the motivation for multiple analysis comes from the need to apply the analysis contained in `analysis.R` to a subset of the entire dataset. These subsets comes from a revelant variable contained in the dataset that splits the larget dataset in some logical manner. Examples of these grouping variable are: species, sex, date, etc. 
+
+Multiple submissions, then, refer to a way of telling `HTCondor` to apply the `analysis.R` script to each of these subsets independently. `HTCondor` manages finding the execute note, the the appropriate compute resources, run the analysis, then bring back the results. 
+
+### Splitting the data into subsets 
+
+```{r}
+#| include: false 
+#| echo: false 
+
+
+# choosing the grouping variable manually, in the package version this will be passed asn an 
+# argument 
+
+grouping_variable <- data$species
+
+
+# Split the data df into a list of subsets based on the a grouping variable contained in data
+subsets <- split(data, grouping_variable)
+
+#helper function that takes as an argument a named list and writes a .csv with the contents of each list and names used the naming convention <named-list.csv>
+
+ savesublists <- function(named_list){
+     write.csv(subsets[[named_list]], 
+               file = paste0("data/", named_list, ".csv"),
+               row.names = FALSE)
+ }
+
+# Use map() to write each sublist to a .csv file with the same name as the named_list
+map(names(subsets), savesublists)
+
+
+#subdatasets holds the names of the created subsets.csv
+
+write.csv(tibble(filename = glue("{names(subsets)}.csv")),
+          "data/subdatasets.csv",
+          row.names = FALSE)
+
+
+```
+
+## Building a plain .R file
+
+`knitr::purl()` takes as an argument `analysis.qmd` to output `analysis.R`. The main reason I chose to do this is because keeping all your code in one place leads to fewer errors and it is easier to maintain. Additionally, stripping the analysis to just the `.R` code keeps the computational overhead to a minimum. 
+
+The argument `documentation` controls how much of the prose is ported as comments into the `.R` file. I chose the value of `1` for just the code. 
+
+```{r}
+#| eval: false
+
+# rstudioapi::documentPath() |>
+#      basename() |> #makes it a relative path to the                       project directory
+    knitr::purl("analysis.qmd", documentation = 1)
+```
+
+
+## Building a container from your analysis 
+
+If you have follow along so far, we had 
+
+- an analysis that we documented and coded inside a single Quarto document  
+
+- a way to capture the package dependencies required to run your analysis via the `renv` package.
+
+To build a container we are going to create a file called Dockerfile which have the instructions needed to build a container image.
+
+```{r}
+#|eval: false
+
+r_version <- R.Version()
+chtc_user <- "lares"
+gitlab_user <- "erwin.lares"
+
+
+#########################
+
+FROM_line <- glue::glue(
+    "FROM rocker/r-ver:{glue::glue('{r_version$major}.{r_version$minor}')}")
+
+WORKDIR_line <- "WORKDIR /home"
+
+COPY_renv_lock <- glue::glue(
+    "COPY renv.lock /home/renv.lock") 
+
+COPY_renv_library <- glue::glue(
+    "COPY renv/library /home/app/renv/library"
+)
+
+# if I want the analysis and the data inside the container, uncomment the two lines below and the two lines 155 and 156
+#COPY_analysis <- "COPY analysis.R /home/toy-analysis.R"
+#COPY_data <- "COPY data.csv /home/data.csv"
+
+
+
+readr::write_lines(FROM_line, file = "Dockerfile")
+readr::write_lines(WORKDIR_line, file = "Dockerfile", 
+                   append = TRUE)
+readr::write_lines(COPY_renv_lock, file = "Dockerfile", 
+                   append = TRUE)
+readr::write_lines(COPY_renv_library, file = "Dockerfile",
+                   append = TRUE)
+
+
+#write_lines(COPY_analysis, file = "Dockerfile", append = TRUE)
+#write_lines(COPY_data, file = "Dockerfile", append = TRUE)
+
+
+#install_restore contains the secret sauce to install all dependencies
+#I chose this to go around nested quotation marks issues
+
+readr::write_lines(read_lines("install_and_restore_packages.sh"), 
+                   file = "Dockerfile",
+                   append = TRUE)
+
+```
+
+## Build the image 
+
+Once we have a Dockerfile, an image is created by running a `podman image build` command. I chose `podman` rather than `docker` due to recent changes to the Docker License Agreement that can potentially affect UW-Madison users. For reference, using a 2019 MacBook Pro, building the image takes approximately 5 minutes.
+
+
+```{bash}
+
+
+#podman build -t registry.doit.wisc.edu/erwin.lares/analysis .
+
+```
+
+# You have a container image, now what? 
+
+Recall that the long game was to be able to ship our analysis to the HTC cluster? at CHTC. We have the container image built, we now have to publish it to a location so that CHTC and see it and use. 
+
+`Docker Hub` has been the *de facto* place to publish container images, but again, due to the issues regarding their user agreement, we are going to pursue two different alternatives. 
+
+The first one is [`Quay.io`](https://quay.io). `Quay.io` is Red Hat's container registry, Quay.io is free for setting up public repositories, but there is a fee for private repositories. You will need a `Quay.io` account in order to publish images. 
+
+The second alternative, is to publish your container image to [UW-Madison gitlab instance](https://git.doit.wisc.edu) container registry. There are a few preliminary steps you need to complete in order to be able to publish your container image there. 
+
+- You must create an gitlab account. If you have a NetID, you are eligible  for one. [Request a gitlab account here](https://kb.wisc.edu/shared-tools/109039)
+- You container need to be associated with a gitlab repo. Your repo must be public. At this time CHTC is not enabled to pull images from private repos.
+- You must enable the Package Registry. Do so on the Sidebar >> Deploy >> Package Registry.
+
+You must login to UW-Madison GitLab Container Registry with your NetID credentials. The code chunk below will prompt you to do so. You will need to do that once. Your credentials will cache for subsequent logins. 
+
+As your image was already created, the next step is to push the image to the GitLab Registry. The code chunk below does just that. Pushing the container image to the GitLab registry took about 4 minutes.
+
+
+```{bash}
+
+#podman push registry.doit.wisc.edu/erwin.lares/analysis
+
+```
+
+## The last strech: running your analysis on CHTC 
+
+At this point you have almost everything you need to run your analysis on CHTC's HTC. To recap, you have ...
+
+- an `renv`-enabled R project which contains an analysis in a human readable `analysis.qmd` and its required data contained in `data.csv`
+- a derived `analysis.R` file that contains the code behind the analysis and performs all the calculations required by the analysis  
+- a derived `Dockerfile` programmatically built from `analysis.qmd`  
+- a container image built from the Dockerfile with correct version of R and all needed libraries to run the analysis 
+- a public GitLab repo with the Container Registry option enabled.
+
+The previous section ended with the publication of the container image to UW-Madison GitLab instance. 
+
+To actually run your analysis, there are a few loose ends to take care off 
+
+- You need a [CHTC account](https://chtc.cs.wisc.edu/uw-research-computing/account-details). You will need your NetID credentials gain access.  
+- You will need to copy `analysis.R` and `data.csv` over to CHTC.
+- You will also need to copy over two additional files, a submit file and a executable file. There is a code chunk below that will create those files.  
+
+
+### Generating the submit file 
+
+CHTC requires you to create a submit file. A submit file tells HTCondor information like resource requirements, software and data requirements, and what commands to run. A submit file contains:
+
+- What to run 
+
+- What files and software you need
+
+- How many standard resources you need (CPUs, memory, disk)
+
+- Where to store data about the job
+
+- Special requirements: GPUs, access to Gluster, a certain operating system
+
+- How many jobs you want to run  
+
+The content for the `analysis.sub` is shown below 
+
+```{r}
+
+######################
+# compute parameters
+######################
+
+request_cpus <-  1
+request_memory <-  4 # in GB. i.e. 4 means 4GB
+request_disk <-  2 #same as above 2GB
+
+
+title_line <- c("# HTC Submit File",
+                "")
+
+container_stanza <- c("# Container stanza provides HTCondor with the name of the container",
+                      "container_image = docker://registry.doit.wisc.edu/erwin.lares/analysis",
+                      "universe = container",
+                      "")
+
+executable_stanza <- c("# The executable line tell HTCondor what job to run",
+                      "executable = analysis.sh",
+                      "")
+
+transfer_stanza <- c("# The “transfer” stanza tells HTCondor ",
+                     "# what to do with output and input files",
+                     "transfer_input_files = analysis.R, data.csv",
+                     "transfer_output_files = analysis-results.tar.gz",
+                     "")
+
+jobs_stanza <- c("# the jobs stanza tracks information printed",
+                 "# by the job or about the job",
+                 "log = job.log",
+                 "error = job.err",
+                 "output = job.out",
+                 "")
+
+request_stanza <- c("# The request stanza tells HTCondor what",
+                    "# resources what resources to allocate ",
+                    glue("request_cpus = {request_cpus}"),
+                    glue("request_memory = {request_memory}GB"),
+                    glue("request_disk = {request_disk}GB"),
+                    "")
+
+queue_stanza <- c("# The queue stanza tells HTCondor the number",
+                  "# of separate jobs requested",
+                  "queue 1",
+                  "")
+
+readr::write_lines(title_line, file = "analysis.sub")
+readr::write_lines(container_stanza, file = "analysis.sub", 
+                   append = TRUE)
+readr::write_lines(executable_stanza, file = "analysis.sub", 
+                   append = TRUE)
+readr::write_lines(transfer_stanza, file = "analysis.sub", 
+                   append = TRUE)
+readr::write_lines(jobs_stanza, file = "analysis.sub", 
+                   append = TRUE)
+readr::write_lines(request_stanza, file = "analysis.sub", 
+                   append = TRUE)
+readr::write_lines(queue_stanza, file = "analysis.sub", 
+                   append = TRUE)
+
+
+
+```
+
+
+### Generating an executable file 
+
+The executable file `analysis.sh` is a shell script that tells CTCondor **what** to do. In our case, we wish to `R` to run the `analysis.R` script. To do so from the command line, we run `Rscript` rather that `R` itself. The `Rscript` takes an existing script, runs `R` in the background, executes the script and closes afterwards. There is no graphical interface opened and no other human interaction needed.
+
+The contents of the `analysis.sh` files is shown below
+
+```{r}
+
+
+title_line <- c("#!/bin/bash", "")
+output_folder_line <- "mkdir results-folder"
+initialize_array_line <- "filenames=()"
+read_filenames_line <- c('while IFS=, read -r filename',
+                         'do',
+                         '  if [ "$filename" != "\\"filename\\"" ]; then',
+                         '    filenames+=("$filename")',
+                         '  fi',
+                         'done < subdatasets.csv')
+loop_line <- c('for filename in "${filenames[@]}"',
+               '  do',
+               '    echo ${filename//\\"/}',
+               '  done')
+compress_line <- "tar -czf analysis-results.tar.gz results-folder"
+
+
+
+readr::write_lines(title_line, file = "analysis.sh")
+readr::write_lines(output_folder_line, file = "analysis.sh", 
+                   append = TRUE)
+readr::write_lines("# Initialize an empty array",
+                   file = "analysis.sh", 
+                   append = TRUE)
+readr::write_lines(initialize_array_line,
+                   file = "analysis.sh", 
+                   append = TRUE)
+readr::write_lines("# Read the CSV file into an array, skipping the header",
+                   file = "analysis.sh", 
+                   append = TRUE)
+readr::write_lines(read_filenames_line,
+                   file = "analysis.sh", 
+                   append = TRUE)
+readr::write_lines("# Loop through the array and print each filename",
+                   file = "analysis.sh", 
+                   append = TRUE)
+readr::write_lines(loop_line,
+                   file = "analysis.sh", 
+                   append = TRUE)
+readr::write_lines(compress_line, file = "analysis.sh", 
+                   append = TRUE)
+
+
+```
+
+
+
+### Copying your analysis and data to CHTC 
+
+The Linux command `scp` — secure copy — can take care of copying files from one machine to another. A popup window will ask you to authenticate with your NetID, password, and your MFA device. Follow the prompts. The code chunk copies all the derived files and the data over to CHTC
+
+
+```{bash}
+
+#scp analysis.R data.csv analysis.sub analysis.sh lares@ap2001.chtc.wisc.edu:/home/lares
+
+```
+
+
+## The last step 
+
+The final step in this journey is to log in to one of CHTC's submit servers. You can read about it [here](https://chtc.cs.wisc.edu/uw-research-computing/connecting)
+
+In short, there are two submit servers, `ap2001.chtc.wisc.edu`, and `ap2002.chtc.wisc.edu`. To access them you'll need to run an `ssh` command from a terminal window with your login information, like so 
+
+```{}
+
+ssh <your-netid>@ap2001.chtc.wisc.edu
+
+```
+
+Once you have authenticated, you'll need to run a `condor_submit` command. `condor_submit` takes one argument, the name of the submit file created earlier. Your submit file `analysis.sub`, along with `analysis.R`, `data.csv`, and `analysis.sh` have been copied over to your home directory on the submit server.
+
+```{}
+
+#this is run on the submit server 
+
+condor_submit analysis.sub
+
+```
+
+To track the job progress, run a `condor_watch_q` command. You can read more about it [here](https://chtc.cs.wisc.edu/uw-research-computing/condor_q)
+
+```{}
+
+#this is run on the submit server 
+
+condor_watch_q
+
+```
+
+
+### Retrieving results 
+
+```{bash}
+
+
+#scp lares@ap2001.chtc.wisc.edu:/home/lares/analysis-results.tar.gz /Users/lares/Desktop
+
+
+```
+
+
+
+
+Good luck submitting your job to CHTC. If you have questions about this document, get in touch with us via email `rstudio-support@office365.wisc.edu`. Don't forget CHTC's facilitation team is ready to help you too! They can be reached at `chtc@cs.wisc.edu`.
+
+If you have question regarding this workflow, get in contact with me ... 
+
+
+
