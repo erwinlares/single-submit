@@ -90,6 +90,9 @@ The code chunk below accomplishes that by grouping the data into subsets by spec
 
 
 ```{r}
+#| label: tbl-mot
+#| tbl-cap: "Measures of tendency for 3 penguin species"
+
 moft_bm <- data |>
     group_by(species) |>
     summarize(min_fl = min(flipper_length_mm, na.rm = TRUE),
@@ -106,11 +109,17 @@ moft_bm |>
   )
 ```
 
+@tbl-mot shows that Adelie penguins are the smallest, Chinstrap penguins are the medium-size species, and Gentoo penguins are the lasgest. 
+
+
 # Visualization results
 
 As the old adage goes, "plot is worth a thousand tables". The code chunk below creates a set of boxplots of the flippers in millimeters for each species of penguins.
 
 ```{r}
+#| label: fig-boxplot
+#| fig-cap: "Flipper length in mm"
+
 data |> 
     ggplot() +
     aes(x = flipper_length_mm, color = species) +
@@ -119,7 +128,7 @@ data |>
     theme_bw()
 ```
 
-At a glance, we can see that Gentoo penguins have the longer flippers of the three species. Adelie penguins have the shortest, but some of the biggest Adelie penguins have flippers are long as some of the small Chintraps. 
+At a glance, @fig-boxplot shows Gentoo penguins have the longer flippers of the three species. Adelie penguins have the shortest, but some of the biggest Adelie penguins have flippers are long as some of the small Chintraps. 
 
 ## Saving results
 
@@ -139,10 +148,17 @@ ggsave("results-folder/fl-mm-plot.png")
 
 ## Saving the code
 
-To recap, we have a document that is mostly written in language intended to be read by humans; it has formatted text to make it easier to read, contains images and diagrams to better understand the points we are trying to get across, *and* it contains the code that performs the calculations associated with the research. As data scales up, it may make sense to avoid the document-rendering overhead computation costs, besides are not interested in any of the prose, just the code.
+To recap, we have a document that is mostly written in language intended to be read by humans; it has formatted text to make it easier to read, contains images and diagrams to better understand the points we are trying to get across, *and* it contains the code that performs the calculations associated with the research. As data scales up, it may make sense to avoid the document-rendering overhead computation costs, as we may not interested in any of the prose, just the code.
 
 We can leverage `knitr`, the engine that powers R in Quarto, to extract just the R code from the Quarto document using the `purl()` function. The code chunk below accomplishes the task described above and creates an .R file from the .qmd in the same directory and sharing the same name. 
 
+```{r}
+#| eval: false
+
+# rstudioapi::documentPath() |>
+#      basename() |> #makes it a relative path to the                       project directory
+    knitr::purl("analysis.qmd", documentation = 1)
+```
 
 
 
