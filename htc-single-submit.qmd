@@ -12,7 +12,7 @@ knitr:
     warning: false
 ---
 
-## The long game
+## Prelude 
 
 The goal being this project is to document the submission process of an R project to CHTC. The main motivation is to lower *the barrier to entry* to CHTC by automating several of the steps involved in a job submission to CHTC. The command line constitutes a painpoint for many researchers that keeps them from leveraging the compute resources offered by CHTC. 
 
@@ -24,8 +24,8 @@ This workflow details the steps involved in the job submission process. It assum
 - `podman` is installed in the local machine.
 - the user has a UW-Madison NetID.
 - the user has a`GitLab` account. Furthermore, there is a repo associated with this analysis and the `Container Registry` feature has been enabled for that repo.
-- for the purposes of this pipeline, the file names are `analysis.qmd`, and `data.csv`. The derived files, `analysis.R`, `analysis.sub`, `analysis.sh`, are all created from the original `.qmd` file provided .
-- the user will have to log in to submit server and run the `condor_submit` command on the `analysis.sub` file. The purpose of this pipeline is to do the heavy lifting of containerizing the analysis, build the files required by CHTC, and move them to the user's `/home` directory.
+- for the purposes of this pipeline, the file names are `analysis.qmd`, and `data.csv`. The derived files, `analysis.R`, `analysis.sub`, `analysis.sh`, are all created from the original `.qmd` file provided.
+- the user will have to log in to submit server and run the `condor_submit` command on the `analysis.sub` file. The purpose of this pipeline is to do the heavy lifting of containerizing the analysis, build the files required by CHTC, move them to the user's `/home` directory, and retrieve the results of the analysis.
 
 ```{mermaid}
 
@@ -52,6 +52,7 @@ flowchart TB
 ```{r}
 library(readr)
 library(knitr)
+library(glue)
 
 ```
 
@@ -60,7 +61,7 @@ library(knitr)
 
 `knitr::purl()` takes as an argument `analysis.qmd` to outputs `analysis.R`. The main reason I chose to do this is because keeping all your code in one place leads to fewer errors and it is easier to maintain. Additionally, stripping the analysis to just the `.R` code keeps the computational overhead to a minimum. 
 
-The argument `documentation` controls how much of the prose is ported as comments into the `.R` file. I chose the value of `1` for just the code. 
+The argument `documentation` controls how much of the prose is ported as comments into the `.R` file. I chose the value of `1` for just the code. A `documentation` value of `0` outputs only code. A value of `2` keeps all the prose as `Roxygen` comments. 
 
 ```{r}
 #| eval: false
@@ -140,7 +141,7 @@ If you have follow along so far, we had
 
 - a way to capture the package dependencies required to run your analysis via the `renv` package.
 
-To build a container we are going to create a file called Dockerfile which have the instructions needed to build a container image.
+To build a container we are going to create a file called Dockerfile which have the instructions needed to build a container image. The code behind the Dockerfile is pretty straight forward. Only two things to highlight: first, you can access the current version of R via `R.Version()` and retrieve the corresponding base image from the `Rocker` project; second, the piece of code that restores the packages and dependencies was a bit tricky to include due to quotation limits.
 
 ```{r}
 #|eval: false
@@ -220,9 +221,9 @@ Once we have a Dockerfile, an image is created by running a `podman image build`
 
 # You have a container image, now what? 
 
-Recall that the long game was to be able to ship our analysis to the HTC cluster? at CHTC. We have the container image built, we now have to publish it to a location so that CHTC and see it and use. 
+Recall that the long game was to be able to ship our analysis to the HTC cluster at CHTC. We have the container image built, we now have to publish it to a location so that CHTC and see it and use. 
 
-`Docker Hub` has been the *de facto* place to publish container images, but again, due to the issues regarding their user agreement, we are going to pursue two different alternatives. 
+`Docker Hub` has been the *de facto* place to publish container images, but again, due to the issues regarding their user agreement, here are two different alternatives. 
 
 The first one is [`Quay.io`](https://quay.io). `Quay.io` is Red Hat's container registry, Quay.io is free for setting up public repositories, but there is a fee for private repositories. You will need a `Quay.io` account in order to publish images. 
 
@@ -255,7 +256,7 @@ At this point you have almost everything you need to run your analysis on CHTC's
 
 The previous section ended with the publication of the container image to UW-Madison GitLab instance. 
 
-To actually run your analysis, there are a few loose ends to take care off 
+To actually run your analysis, there are a few loose ends to take care of. 
 
 - You need a [CHTC account](https://chtc.cs.wisc.edu/uw-research-computing/account-details). You will need your NetID credentials gain access.  
 - You will need to copy `analysis.R` and `data.csv` over to CHTC.
@@ -278,10 +279,15 @@ CHTC requires you to create a submit file. A submit file tells HTCondor informat
 
 - How many jobs you want to run  
 
-The content for the `analysis.sub` is shown below 
+The code that generates `analysis.sub` is shown below 
 
 ```{r}
 
+#cpu, memory, disk will be turned into arguments for a future function
+
+cpu <- 1 #numer of cores
+mem <- 4 # in GB
+disk <- 2 # in GB
 
 title_line <- c("# HTC Submit File",
                 "")
@@ -310,9 +316,9 @@ jobs_stanza <- c("# the jobs stanza tracks information printed",
 
 request_stanza <- c("# The request stanza tells HTCondor what",
                     "# resources what resources to allocate ",
-                    "request_cpus = 1",
-                    "request_memory = 4GB",
-                    "request_disk = 2GB",
+                    glue("request_cpus = {cpu}"),
+                    glue("request_memory = {mem}GB"),
+                    glue("request_disk = {disk}GB"),
                     "")
 
 queue_stanza <- c("# The queue stanza tells HTCondor the number",
@@ -341,7 +347,7 @@ readr::write_lines(queue_stanza, file = "analysis.sub",
 
 ### Generating an executable file 
 
-The executable file `analysis.sh` is a shell script that tells CTCondor **what** to do. In our case, we wish to `R` to run the `analysis.R` script. To do so from the command line, we run `Rscript` rather that `R` itself. The `Rscript` takes an existing script, runs `R` in the background, executes the script and closes afterwards. There is no graphical interface opened and no other human interaction needed.
+The executable file `analysis.sh` is a shell script that tells CTCondor **what** to do. In our case, we wish `R` to run the `analysis.R` script. To do so from the command line, we run `Rscript` rather that `R` itself. The `Rscript` takes an existing script, runs `R` in the background, executes the script and closes afterwards. There is no graphical interface opened and no other human interaction needed.
 
 The contents of the `analysis.sh` files is shown below
 
@@ -412,20 +418,34 @@ condor_watch_q
 
 ### Retrieving results 
 
+The last step of this workflow is getting the results out of CHTC's server and back into your personal computer. 
+
 ```{bash}
 
 
-#scp lares@ap2001.chtc.wisc.edu:/home/lares/analysis-results.tar.gz /Users/lares/Desktop
+#scp lares@ap2001.chtc.wisc.edu:/home/lares/analysis-results.tar.gz .
 
 
 ```
 
 
+## Postlude 
 
+This workflow is the first stab at making submission easier. I purposefully went as simple as possible. As a result, there is plenty of room for improvement. 
+
+- Connecting to remote storage
+- Multiple jobs submission
+- Remote submission
+- HPC submission 
+
+
+
+In addition, there is work to be done to make this workflow more portable and easier to use. Ideally, I'm turning the various steps into functions that you can call as you see fit to do the work for you. I plan to distribute them as a R package. The most difficult step is already completed; I chose a name and designed a sticker for it
+
+![](nb2clustr.jpeg)
 
 Good luck submitting your job to CHTC. If you have questions about this document, get in touch with us via email `rstudio-support@office365.wisc.edu`. Don't forget CHTC's facilitation team is ready to help you too! They can be reached at `chtc@cs.wisc.edu`.
 
-If you have question regarding this workflow, get in contact with me ... 
 
 
 
