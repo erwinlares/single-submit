@@ -1,5 +1,5 @@
 ---
-title: "A workflow to containerize your analysis "
+title: "Single Submit to CHTC"
 author: "Erwin Lares"
 affiliation: "Research Cyberinfrastructure at DoIT"
 format:
@@ -438,9 +438,7 @@ This workflow is the first stab at making submission easier. I purposefully went
 - Remote submission
 - HPC submission 
 
-
-
-In addition, there is work to be done to make this workflow more portable and easier to use. Ideally, I'm turning the various steps into functions that you can call as you see fit to do the work for you. I plan to distribute them as a R package. The most difficult step is already completed; I chose a name and designed a sticker for it
+In addition, there is work to be done to make this workflow more portable and easier to use. Ideally, I'm turning the various steps into functions that one would be able to call as needed. I plan to distribute them as a R package. The most difficult step is already completed; I chose a name and designed a sticker for it
 
 ![](nb2clustr.jpeg)
 
