@@ -215,7 +215,7 @@ Once we have a Dockerfile, an image is created by running a `podman image build`
 ```{bash}
 
 
-podman build -t registry.doit.wisc.edu/erwin.lares/analysis-2 .
+#podman build -t registry.doit.wisc.edu/erwin.lares/analysis-2 .
 
 ```
 
@@ -240,7 +240,7 @@ As your image was already created, the next step is to push the image to the Git
 
 ```{bash}
 
-podman push registry.doit.wisc.edu/erwin.lares/analysis
+#podman push registry.doit.wisc.edu/erwin.lares/analysis
 
 ```
 
@@ -378,7 +378,7 @@ The Linux command `scp` — secure copy — can take care of copying files from 
 
 ```{bash}
 
-scp analysis.R data.csv analysis.sub analysis.sh lares@ap2001.chtc.wisc.edu:/home/lares
+#scp analysis.R data.csv analysis.sub analysis.sh lares@ap2001.chtc.wisc.edu:/home/lares
 
 ```
 
@@ -423,7 +423,7 @@ The last step of this workflow is getting the results out of CHTC's server and b
 ```{bash}
 
 
-scp lares@ap2001.chtc.wisc.edu:/home/lares/analysis-results.tar.gz .
+#scp lares@ap2001.chtc.wisc.edu:/home/lares/analysis-results.tar.gz .
 
 
 ```
