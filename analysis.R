@@ -6,7 +6,7 @@
 ##   D -->F[Save tabular results as .csv<br>Save plot as .png]
 ##   E -->F
 
-## -----------------------------------------------------------------------------------
+## --------------------------------------------------
 library(tidyverse)
 library(palmerpenguins)
 library(gt)
@@ -14,7 +14,10 @@ library(gt)
 data <- palmerpenguins::penguins
 
 
-## -----------------------------------------------------------------------------------
+## --------------------------------------------------
+#| label: tbl-mot
+#| tbl-cap: "Measures of tendency for 3 penguin species"
+
 moft_bm <- data |>
     group_by(species) |>
     summarize(min_fl = min(flipper_length_mm, na.rm = TRUE),
@@ -31,7 +34,10 @@ moft_bm |>
   )
 
 
-## -----------------------------------------------------------------------------------
+## --------------------------------------------------
+#| label: fig-boxplot
+#| fig-cap: "Flipper length in mm"
+
 data |> 
     ggplot() +
     aes(x = flipper_length_mm, color = species) +
@@ -40,9 +46,17 @@ data |>
     theme_bw()
 
 
-## -----------------------------------------------------------------------------------
+## --------------------------------------------------
 
 moft_bm |> write_csv("results-folder/moft-bm.csv")
 
 ggsave("results-folder/fl-mm-plot.png")
+
+
+## --------------------------------------------------
+#| eval: false
+
+# # rstudioapi::documentPath() |>
+# #      basename() |> #makes it a relative path to the                       project directory
+#     knitr::purl("analysis.qmd", documentation = 1)
 
