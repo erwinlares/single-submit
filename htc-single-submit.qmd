@@ -6,6 +6,8 @@ format:
   html:
     code-fold: true
     code-summary: "Show the code"
+    mainfont: "Lato" 
+    
 knitr:
   opts_chunk: 
     message: false
@@ -25,7 +27,7 @@ This workflow details the steps involved in the job submission process. It assum
 - the user has a UW-Madison NetID.
 - the user has a`GitLab` account. Furthermore, there is a repo associated with this analysis and the `Container Registry` feature has been enabled for that repo.
 - for the purposes of this pipeline, the file names are `analysis.qmd`, and `data.csv`. The derived files, `analysis.R`, `analysis.sub`, `analysis.sh`, are all created from the original `.qmd` file provided.
-- the user will have to log in to submit server and run the `condor_submit` command on the `analysis.sub` file. The purpose of this pipeline is to do the heavy lifting of containerizing the analysis, build the files required by CHTC, move them to the user's `/home` directory, and retrieve the results of the analysis.
+- the user will have to log in to submit server and run the `condor_submit` command on the `analysis.sub` file. The purpose of this pipeline is to do the heavy lifting of containerizing the analysis, building the files required by CHTC, moving them to the user's `/home` directory, and retrieving the results of the analysis after the job is executed.
 
 ```{mermaid}
 
@@ -40,38 +42,37 @@ flowchart TB
   D --> E
   E --> F[Build container image]
   F --> G[Logs in to registry.doit.wisc.edu]
-  G --> H[Pushes image to registry/gitlabuser/repo]
+  G --> H[Pushes image <br>to registry/gitlabuser/repo]
   H --> I[Creates submit file]
   I --> J[Creates executable file]
   J --> K[Copies files + data <br>over CHTC's /home ]
+  K --> L[User logs in <br> executes condor_submit]
+  L --> M[Retrives results]
 ```
 
 
 
 
 ```{r}
+#| echo: false
 library(readr)
 library(knitr)
 library(glue)
-
 ```
 
 
 ## Building a plain .R file
 
-`knitr::purl()` takes as an argument `analysis.qmd` to outputs `analysis.R`. The main reason I chose to do this is because keeping all your code in one place leads to fewer errors and it is easier to maintain. Additionally, stripping the analysis to just the `.R` code keeps the computational overhead to a minimum. 
-
-The argument `documentation` controls how much of the prose is ported as comments into the `.R` file. I chose the value of `1` for just the code. A `documentation` value of `0` outputs only code. A value of `2` keeps all the prose as `Roxygen` comments. 
+`knitr::purl()` takes as an argument `analysis.qmd` to output `analysis.R`. Stripping the analysis to just the `.R` code keeps the computational overhead to a minimum. The argument `documentation` controls how much of the prose is ported as comments into the `.R` file. I chose the value of `1` for just the code. A `documentation` value of `0` outputs only code. A value of `2` keeps all the prose as `Roxygen` comments. 
 
 ```{r}
 #| eval: false
 
-# rstudioapi::documentPath() |>
-#      basename() |> #makes it a relative path to the                       project directory
-    knitr::purl("analysis.qmd", documentation = 1)
+knitr::purl("analysis.qmd", documentation = 1)
+
 ```
 
-The following section includes a bit of information about containers. What is critical is that containers are a fantastic technology to make sure your analysis is reproducible as it encapsulates your code and everything needed to run it. In this draft I may be referring to container, docker container, or podman container interchangeably. 
+The following section includes a bit of information about containers. Containers are a fantastic technology to make sure your analysis is reproducible as it encapsulates your code and everything needed to run it. In this draft I may be referring to a container, docker container, or podman container interchangeably. 
 
 
 ::: {.callout-important collapse="true}
@@ -135,13 +136,14 @@ Overall, containers can greatly enhance the efficiency, reliability, and reprodu
 
 ## Building a container from your analysis 
 
-If you have follow along so far, we had 
+So far, we had 
 
 - an analysis that we documented and coded inside a single Quarto document  
 
 - a way to capture the package dependencies required to run your analysis via the `renv` package.
 
-To build a container we are going to create a file called Dockerfile which have the instructions needed to build a container image. The code behind the Dockerfile is pretty straight forward. Only two things to highlight: first, you can access the current version of R via `R.Version()` and retrieve the corresponding base image from the `Rocker` project; second, the piece of code that restores the packages and dependencies was a bit tricky to include due to quotation limits.
+The first step to create a container is to generate a special kind of file called `Dockerfile` which contains the instructions needed to build a container image. The code behind the Dockerfile is pretty straight forward. Only two things to highlight: first, you can access the current version of R running your code via `R.Version()` and retrieve the corresponding base image from the [`Rocker Project`](https://rocker-project.org/); and second, the piece of code that restores the packages and dependencies was a bit tricky to include due to quotation limits.
+
 
 ```{r}
 #|eval: false
@@ -149,22 +151,6 @@ To build a container we are going to create a file called Dockerfile which have 
 r_version <- R.Version()
 chtc_user <- "lares"
 gitlab_user <- "erwin.lares"
-
-# fileConn<-file("output.txt")
-# writeLines(c("Hello","World"), fileConn)
-# close(fileConn)
-
-# dockerfile_line_by_line <-  glue::glue(
-#     "
-#     #Get the current version of R as the base image
-#     FROM rocker/r-ver:{glue::glue('{r_version$major}.{r_version$minor}')}
-#     # Set the working directory
-#     WORKDIR /home
-#     ")
-
-# file_conn <- file("Dockerfile")
-# writeLines(dockerfile_line_by_line, file("Dockerfile"))
-# close(file("Dockerfile"))
 
 
 FROM_line <- glue::glue(
@@ -179,7 +165,8 @@ COPY_renv_library <- glue::glue(
     "COPY renv/library /home/app/renv/library"
 )
 
-# if I want the analysis and the data inside the container, uncomment the two lines below and the two lines 155 and 156
+# if I want the analysis and the data inside the container, uncomment the two lines below and the two lines write_lines below 
+
 #COPY_analysis <- "COPY analysis.R /home/toy-analysis.R"
 #COPY_data <- "COPY data.csv /home/data.csv"
 
@@ -207,13 +194,29 @@ readr::write_lines(read_lines("install_and_restore_packages.sh"),
 
 ```
 
+The code that allows to reproduce the dependencies looks like this 
+
+```{r}
+#|eval: false
+
+#Install renv and restore dependencies
+#'https://cloud.r-projects.org/'
+
+RUN R -e "install.packages('renv', repos='https://packagemanager.posit.co/cran/latest')"
+RUN R -e "renv::restore()"
+
+```
+
+
+
 ## Build the image 
 
 Once we have a Dockerfile, an image is created by running a `podman image build` command. I chose `podman` rather than `docker` due to recent changes to the Docker License Agreement that can potentially affect UW-Madison users. For reference, using a 2019 MacBook Pro, building the image takes approximately 5 minutes.
 
+A sidenote, in case it isn't immediately obvious. I am running a Linux command from inside a Quarto document. 
+
 
 ```{bash}
-
 
 #podman build -t registry.doit.wisc.edu/erwin.lares/analysis-2 .
 
@@ -260,7 +263,7 @@ To actually run your analysis, there are a few loose ends to take care of.
 
 - You need a [CHTC account](https://chtc.cs.wisc.edu/uw-research-computing/account-details). You will need your NetID credentials gain access.  
 - You will need to copy `analysis.R` and `data.csv` over to CHTC.
-- You will also need to copy over two additional files, a submit file and a executable file. There is a code chunk below that will create those files.  
+- You will also need to copy over two additional files, a submit file and a executable file. There are code chunks below that will create those files.  
 
 
 ### Generating the submit file 
@@ -389,32 +392,18 @@ The final step in this journey is to log in to one of CHTC's submit servers. You
 
 In short, there are two submit servers, `ap2001.chtc.wisc.edu`, and `ap2002.chtc.wisc.edu`. To access them you'll need to run an `ssh` command from a terminal window with your login information, like so 
 
-```{}
 
-ssh <your-netid>@ap2001.chtc.wisc.edu
+`ssh <your-netid>@ap2001.chtc.wisc.edu`
 
-```
+If you anticipate spending lots of times submiting jobs to CHTC, you might want to reduce login painpoints. I recommend checking the post [Automating CHTC login](https://chtc.cs.wisc.edu/uw-research-computing/configure-ssh). Using ControlMaster lets you catche your credentials.  
 
 Once you have authenticated, you'll need to run a `condor_submit` command. `condor_submit` takes one argument, the name of the submit file created earlier. Your submit file `analysis.sub`, along with `analysis.R`, `data.csv`, and `analysis.sh` have been copied over to your home directory on the submit server.
 
-```{}
-
-#this is run on the submit server 
-
-condor_submit analysis.sub
-
-```
+`condor_submit analysis.sub`
 
 To track the job progress, run a `condor_watch_q` command. You can read more about it [here](https://chtc.cs.wisc.edu/uw-research-computing/condor_q)
 
-```{}
-
-#this is run on the submit server 
-
-condor_watch_q
-
-```
-
+`condor_watch_q`
 
 ### Retrieving results 
 
