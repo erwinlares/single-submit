@@ -4,3 +4,9 @@
 .httr-oauth
 .DS_Store
 .quarto
+.gz
+sandbox.R
+Dockerfile
+.sh
+.sub
+.R
