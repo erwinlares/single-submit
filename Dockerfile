@@ -1,4 +1,4 @@
-FROM rocker/r-ver:4.4.2
+FROM rocker/r-ver:4.4.3
 WORKDIR /home
 COPY renv.lock /home/renv.lock
 COPY renv/library /home/app/renv/library

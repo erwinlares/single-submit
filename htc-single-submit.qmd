@@ -419,7 +419,7 @@ The last step of this workflow is getting the results out of CHTC's server and b
 
 ## Postlude 
 
-This workflow is the first stab at making submission easier. I purposefully went as simple as possible. As a result, there is plenty of room for improvement. 
+This workflow is the first stab at making the submission process easier for researchers. I purposefully went as simple as possible. As a result, there is plenty of room for improvement. 
 
 - Connecting to remote storage
 - Multiple jobs submission
