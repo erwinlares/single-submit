@@ -16,12 +16,12 @@ knitr:
 
 ## Prelude 
 
-The goal being this project is to document the submission process of an R project to CHTC. The main motivation is to lower *the barrier to entry* to CHTC by automating several of the steps involved in a job submission to CHTC. The command line constitutes a painpoint for many researchers that keeps them from leveraging the compute resources offered by CHTC. 
+One of the goals of this project is to document the submission process of an R project to CHTC. The second goal is to lower *the barrier to entry* to CHTC by automating several of the steps involved in a job submission. The command line constitutes a painpoint for many researchers that keeps them from leveraging the compute resources available to them. 
 
 This workflow details the steps involved in the job submission process. It assumes:
 
 - the analysis is contained in a Quarto markdown or R markdown document.
-- packages dependencies are managed with the `renv` package and a .lock file exists in the project folder.
+- packages dependencies are managed with the `renv` package and a `.lock` file exists in the project folder.
 - this pipeline requires the user to log in to CHTC account once before running the code chunks present in this document.
 - `podman` is installed in the local machine.
 - the user has a UW-Madison NetID.
@@ -142,7 +142,7 @@ So far, we had
 
 - a way to capture the package dependencies required to run your analysis via the `renv` package.
 
-The first step to create a container is to generate a special kind of file called `Dockerfile` which contains the instructions needed to build a container image. The code behind the Dockerfile is pretty straight forward. Only two things to highlight: first, you can access the current version of R running your code via `R.Version()` and retrieve the corresponding base image from the [`Rocker Project`](https://rocker-project.org/); and second, the piece of code that restores the packages and dependencies was a bit tricky to include due to quotation limits.
+The first step to create a container is to generate a special kind of file called `Dockerfile` which contains the instructions needed to build a container image. The code behind the `Dockerfile` is pretty straight forward. Only two things to highlight: first, you can access the current version of R running your code via `R.Version()` and retrieve the corresponding base image from the [`Rocker Project`](https://rocker-project.org/); and second, the piece of code that restores the packages and dependencies was a bit tricky to code because of quotation limits. I got around the quotation issue by appending it the static code to the `Dockerfile`. 
 
 
 ```{r}
@@ -197,7 +197,7 @@ readr::write_lines(read_lines("install_and_restore_packages.sh"),
 The code that allows to reproduce the dependencies looks like this 
 
 ```{r}
-#|eval: false
+#| eval: false
 
 #Install renv and restore dependencies
 #'https://cloud.r-projects.org/'
@@ -230,15 +230,15 @@ Recall that the long game was to be able to ship our analysis to the HTC cluster
 
 The first one is [`Quay.io`](https://quay.io). `Quay.io` is Red Hat's container registry, Quay.io is free for setting up public repositories, but there is a fee for private repositories. You will need a `Quay.io` account in order to publish images. 
 
-The second alternative, is to publish your container image to [UW-Madison gitlab instance](https://git.doit.wisc.edu) container registry. There are a few preliminary steps you need to complete in order to be able to publish your container image there. 
+The second alternative, is to publish your container image to the [UW-Madison gitlab instance](https://git.doit.wisc.edu) container registry. There are a few preliminary steps you need to complete in order to be able to publish your container image there. 
 
 - You must create an gitlab account. If you have a NetID, you are eligible  for one. [Request a gitlab account here](https://kb.wisc.edu/shared-tools/109039)
-- You container need to be associated with a gitlab repo. Your repo must be public. At this time CHTC is not enabled to pull images from private repos.
+- You container needs to be associated with a gitlab repo. Your repo must be public. At this time CHTC is not enabled to pull images from private repos.
 - You must enable the Package Registry. Do so on the Sidebar >> Deploy >> Package Registry.
 
 You must login to UW-Madison GitLab Container Registry with your NetID credentials. The code chunk below will prompt you to do so. You will need to do that once. Your credentials will cache for subsequent logins. 
 
-As your image was already created, the next step is to push the image to the GitLab Registry. The code chunk below does just that. Pushing the container image to the GitLab registry took about 4 minutes.
+After your image was already created, the next step is to push the image to the GitLab Registry. The code chunk below does just that. Pushing the container image to the GitLab registry took about 4 minutes.
 
 
 ```{bash}
@@ -254,16 +254,15 @@ At this point you have almost everything you need to run your analysis on CHTC's
 - an `renv`-enabled R project which contains an analysis in a human readable `analysis.qmd` and its required data contained in `data.csv`
 - a derived `analysis.R` file that contains the code behind the analysis and performs all the calculations required by the analysis  
 - a derived `Dockerfile` programmatically built from `analysis.qmd`  
-- a container image built from the Dockerfile with correct version of R and all needed libraries to run the analysis 
+- a container image built from the Dockerfile with the correct version of R and all needed libraries to run the analysis 
 - a public GitLab repo with the Container Registry option enabled.
 
-The previous section ended with the publication of the container image to UW-Madison GitLab instance. 
 
 To actually run your analysis, there are a few loose ends to take care of. 
 
-- You need a [CHTC account](https://chtc.cs.wisc.edu/uw-research-computing/account-details). You will need your NetID credentials gain access.  
+- You need a [CHTC account](https://chtc.cs.wisc.edu/uw-research-computing/account-details). You will need your NetID credentials to gain access.  
 - You will need to copy `analysis.R` and `data.csv` over to CHTC.
-- You will also need to copy over two additional files, a submit file and a executable file. There are code chunks below that will create those files.  
+- You will also need to copy over two additional files, a submit file and an executable file. There are code chunks below that will create those files.  
 
 
 ### Generating the submit file 
@@ -395,7 +394,7 @@ In short, there are two submit servers, `ap2001.chtc.wisc.edu`, and `ap2002.chtc
 
 `ssh <your-netid>@ap2001.chtc.wisc.edu`
 
-If you anticipate spending lots of times submiting jobs to CHTC, you might want to reduce login painpoints. I recommend checking the post [Automating CHTC login](https://chtc.cs.wisc.edu/uw-research-computing/configure-ssh). Using ControlMaster lets you catche your credentials.  
+If you anticipate spending lots of times submiting jobs to CHTC, you might want to reduce login painpoints. I recommend checking the post [Automating CHTC login](https://chtc.cs.wisc.edu/uw-research-computing/configure-ssh). Using ControlMaster lets you cache your credentials.  
 
 Once you have authenticated, you'll need to run a `condor_submit` command. `condor_submit` takes one argument, the name of the submit file created earlier. Your submit file `analysis.sub`, along with `analysis.R`, `data.csv`, and `analysis.sh` have been copied over to your home directory on the submit server.
 
@@ -426,6 +425,7 @@ This workflow is the first stab at making submission easier. I purposefully went
 - Multiple jobs submission
 - Remote submission
 - HPC submission 
+- Parametrize job specs 
 
 In addition, there is work to be done to make this workflow more portable and easier to use. Ideally, I'm turning the various steps into functions that one would be able to call as needed. I plan to distribute them as a R package. The most difficult step is already completed; I chose a name and designed a sticker for it
 
