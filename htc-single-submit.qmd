@@ -6,13 +6,15 @@ format:
   html:
     code-fold: true
     code-summary: "Show the code"
-    mainfont: "Lato" 
-    
 knitr:
   opts_chunk: 
     message: false
     warning: false
 ---
+
+## Intro
+
+![](rci-portfolio.png)
 
 ## Prelude 
 
@@ -75,7 +77,7 @@ knitr::purl("analysis.qmd", documentation = 1)
 The following section includes a bit of information about containers. Containers are a fantastic technology to make sure your analysis is reproducible as it encapsulates your code and everything needed to run it. In this draft I may be referring to a container, docker container, or podman container interchangeably. 
 
 
-::: {.callout-important collapse="true}
+::: {.callout-tip collapse="true}
 ## What's a container?
 
 A Docker container is a lightweight, portable, and self-sufficient environment that allows you to run applications in a consistent and isolated manner. Here's a breakdown of what makes Docker containers unique and useful:
@@ -117,7 +119,7 @@ While containers offer many benefits, they also come with some disadvantages. He
 Despite these challenges, many organizations find that the advantages of using Docker containers—such as portability, scalability, and consistency—outweigh the disadvantages. Proper planning, security practices, and resource management can mitigate many of these issues.
 ::: 
 
-::: {.callout-note collapse="true}
+::: {.callout-tip collapse="true}
 ## Why/when should you put your analysis in a container 
 
 Packaging your analysis in a container can provide several benefits, especially in the context of research. Here are some scenarios when you might consider it, and the reasons why it's advantageous:
