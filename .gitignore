@@ -10,3 +10,6 @@ Dockerfile
 .sh
 .sub
 .R
+.html
+.js
+.css
