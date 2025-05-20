@@ -1,0 +1,19 @@
+color:
+  palette:
+    light-grey: "#f7f7f7"
+    blue: "#ddeaf1"
+    badger-red: "#c5050c"
+    text-dark-grey: "#333333"
+  background: light-grey
+  foreground: text-dark-grey
+  primary: badger-red
+
+typography:
+  fonts:
+    - family: Lato
+      source: google
+  base: Lato Light
+  headings: Lato
+  
+logo:
+    medium: dsp-logo.png
