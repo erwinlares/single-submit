@@ -291,7 +291,7 @@ The code that generates `analysis.sub` is shown below
 
 #cpu, memory, disk will be turned into arguments for a future function
 
-cpu <- 1 #numer of cores
+cpu <- 10 #numer of cores
 mem <- 4 # in GB
 disk <- 2 # in GB
 
