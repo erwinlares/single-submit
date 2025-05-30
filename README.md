@@ -3,7 +3,7 @@
 
 ### A step-by-step guide to submit your analysis to CHTCH's HTC cluster
 
-This workflow help you submit an analysis contained within a qmd/Rmd files to CHTC's HTC submit notes. This is the first iteration of this workflow. It will guide you through the *simplest* type of job submission you can do, i.e., you will submit a single job. 
+This workflow helps you submit an analysis contained within a qmd/Rmd files to CHTC's HTC submit notes. This is the first iteration of this workflow. It will guide you through the *simplest* type of job submission you can do, i.e., you will submit a single job. 
 
 
 ### What you have to have in place for this workflow to work
